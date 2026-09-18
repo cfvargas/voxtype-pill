@@ -76,6 +76,18 @@ you declare them as properties:
 | `recipe` | `config.visual` (the layers, if you want to interpret them) |
 | `assetRoot` | Base path for the package's assets |
 
+### Not every `[osd]` key reaches a custom style
+
+`theme.config` is the resolved style JSON voxtype writes to
+`$XDG_RUNTIME_DIR/voxtype/quickshell-style.json`. It carries only a subset of
+the `[osd]` keys: `style`, `palette`, `layout`, `position`, `margin_px`,
+`top_margin`, the resolved `colors`, `frame`, and `visual`. It does **not**
+include `waveform_gain`, `waveform_window_secs`, `peak_decay_db_per_sec`, or
+`opacity`. Those apply only to voxtype's built-in renderer. A custom style owns
+waveform behavior itself, so setting `osd.waveform_gain` with `voxtype config
+set` has no effect on custom QML. This pill keeps its gain as a constant in
+`Pill.qml` for that reason.
+
 ## Why this design reads the theme file directly
 
 `Pill.qml` reads the Omarchy theme's `colors.toml` instead of only the roles

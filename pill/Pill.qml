@@ -103,9 +103,14 @@ Item {
     readonly property real attackPerFrame:  0.55        // rise (0..1 per frame)
     readonly property real releasePerFrame: 0.07        // fall, slower
 
-    // Visual gain: mic voice peaks sit around 0.1-0.3 of full scale, so with no
-    // gain the trace would be a flat line.
-    readonly property real gain: _cfgNum("waveform_gain", 10.0)
+    // Visual gain applied to each peak before drawing. It is a fixed constant,
+    // not a config key. voxtype does not pass osd.waveform_gain to custom QML
+    // styles (its style JSON omits it), so `voxtype config set` cannot change
+    // it. Tune it by editing this value and re-running install.sh. At 3.0,
+    // ambient mic noise (~0.05 peak) stays as faint dots and normal speech
+    // reaches full height. Lower it if the bars saturate, raise it if they
+    // barely move.
+    readonly property real gain: 3.0
 
     // Position comes from the config, like the built-in surface. For the
     // centered anchors the vertical is set by `top_margin` (a fraction of

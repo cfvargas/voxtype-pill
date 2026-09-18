@@ -36,7 +36,9 @@ cp -r "$SRC_DIR/pill" "$STYLE_DIR"
 info "installed style to $STYLE_DIR"
 
 # Point [osd] at the pill. `voxtype config set` type-checks each value and
-# preserves comments and unrelated settings.
+# preserves comments and unrelated settings. Only the keys below reach a custom
+# QML style; waveform_gain, waveform_window_secs, peak_decay and opacity are not
+# passed to custom styles, so the pill owns those itself (see README).
 info "configuring [osd]…"
 voxtype config set osd.enabled               true
 voxtype config set osd.frontend              quickshell
@@ -46,10 +48,6 @@ voxtype config set osd.layout                custom
 voxtype config set osd.position              bottom-center
 voxtype config set osd.top_margin            0.90
 voxtype config set osd.margin_px             24
-voxtype config set osd.opacity               1.0
-voxtype config set osd.waveform_window_secs  3.0
-voxtype config set osd.peak_decay_db_per_sec 6.0
-voxtype config set osd.waveform_gain         10.0
 
 # The frontend change needs a daemon restart (it reloads the model, so this
 # takes a few seconds).
@@ -61,4 +59,4 @@ else
 fi
 
 info "done. Hold your push-to-talk key and speak to see the pill."
-info "If the bars saturate or barely move, tune waveform_gain (see README)."
+info "If the bars saturate or barely move, edit the gain constant in pill/Pill.qml and re-run install (see README)."

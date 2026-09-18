@@ -79,16 +79,19 @@ applies these:
 | `osd.palette` | `omarchy` | Lets colors follow the Omarchy theme. |
 | `osd.position` | `bottom-center` | Horizontal anchor. |
 | `osd.top_margin` | `0.90` | Vertical position, as a fraction of screen height. Higher is lower. |
-| `osd.waveform_gain` | `10.0` | How strongly the bars react to your voice. |
 
-**Tuning `waveform_gain`.** This is the one value worth tuning to your
-microphone. If the bars slam to full height on normal speech, lower it. If
-they barely move, raise it.
+**Tuning the waveform sensitivity.** The bars' sensitivity is a `gain` constant
+in `pill/Pill.qml` (default `3.0`), not a config key. voxtype does not pass
+`osd.waveform_gain` to custom QML styles, so `voxtype config set` has no effect
+on it. To change it, edit the constant and re-run the installer:
 
 ```bash
-voxtype config set osd.waveform_gain 8.0
-systemctl --user restart voxtype.service
+# in pill/Pill.qml:  readonly property real gain: 3.0
+./install.sh
 ```
+
+Lower the gain if the bars saturate to full height on normal speech, raise it if
+they barely move.
 
 ## How the theming works
 
