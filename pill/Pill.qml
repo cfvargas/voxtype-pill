@@ -1,10 +1,9 @@
-// Rediseño del OSD de voxtype: píldora con punto de grabación y traza de
-// barras finas con degradado horizontal. Reproduce docs/actual.png.
+// voxtype OSD redesign: a pill with a recording dot and a thin-bar waveform.
 //
-// Contrato con OsdSurface.qml: el Loader llena toda la pantalla y nos
-// inyecta estas propiedades, así que el posicionamiento es cosa nuestra.
-// Los tipos de capa integrados no sirven aquí: `bars` topa en 28 barras
-// con degradado vertical, y el diseño pide ~72 finas de azul a magenta.
+// Contract with OsdSurface.qml: its Loader fills the whole screen and injects
+// the properties below, so positioning is our job. The built-in layer types do
+// not fit here. `bars` caps at 28 bars with a vertical gradient, and this
+// design wants ~72 thin bars running blue to magenta.
 
 import QtQuick
 import Quickshell
@@ -13,36 +12,29 @@ import Quickshell.Io
 Item {
     id: root
 
-    // --- inyectadas por OsdSurface._syncCustomItem() ---
+    // Injected by OsdSurface.
     property string daemonState: "idle"
     property var audio: null
     property var theme: null      // VT.StyleLoader
     property var recipe: null
     property string assetRoot: ""
 
-    // ---------------------------------------------------------------
-    // Diseño. Medidas tomadas del mockup (píldora de 447x60 sobre 1280).
-    // ---------------------------------------------------------------
-    readonly property int  pillWidth:      253         // ancho grabando (dos tercios de 380)
-    readonly property int  pillWidthMin:   110         // ancho transcribiendo, ajustado a la onda mini
+    // Design. Measurements taken from the mockup (a 447x60 pill on 1280).
+    readonly property int  pillWidth:      253         // recording width (two-thirds of 380)
+    readonly property int  pillWidthMin:   110         // transcribing width, fit to the mini wave
     readonly property int  pillHeight:      50
     readonly property real pillRadius:      pillHeight / 2
 
-    // Ancho actual: se interpola con el cruce grabación<->transcripción, así
-    // que la píldora se encoge alrededor de los tres puntos de forma animada.
-    // _transProgress ya viene suavizado, el encogimiento hereda esa curva.
+    // The pill shrinks around the dots during transcription. This width
+    // interpolates on the recording<->transcribing crossfade, which is already
+    // smoothed, so the shrink inherits that curve.
     readonly property real curPillWidth:
         pillWidth + (pillWidthMin - pillWidth) * _transProgress
 
-    // ---------------------------------------------------------------
-    // Colores: siguen al tema activo de Omarchy.
-    //
-    // Los roles que expone el launcher (`theme.color`) son pocos y algunos
-    // van fijos — `recording` es siempre #F2594D, no el rojo del tema — así
-    // que se lee colors.toml del tema directamente (ver FileView abajo).
-    // Todos los temas de Omarchy traen los ocho colores base, así que el
-    // mapeo vale para cualquiera. Cada valor cae al mockup si falta.
-    // ---------------------------------------------------------------
+    // Colors follow the active Omarchy theme. The roles the launcher exposes
+    // (theme.color) are few and some are fixed (recording is always #F2594D,
+    // not the theme's red), so we read the theme's colors.toml directly (see the
+    // theme reader below). Every color falls back to the mockup value.
     property var themeColors: ({})
 
     function _tc(key, fallback) {
@@ -50,16 +42,16 @@ Item {
         return (typeof v === "string" && v.length === 7) ? v : fallback;
     }
 
-    // Cuatro claves del tema y nada más: el fondo, el rojo y dos para las
-    // barras. El borde no gasta clave: se deriva aclarando el fondo.
+    // Four theme keys: the background, the red, and two for the bars. The border
+    // spends no key; it is derived by lightening the background.
     readonly property string bgHex:     _tc("dark_background", _tc("background", "#0B121A"))
     readonly property color  pillColor:  _withAlpha(bgHex, 0.99)
     readonly property color  pillBorder: _mix(bgHex, "#FFFFFF", 0.14)
     readonly property color  dotColor:   _tc("red", "#E73B36")
 
-    // Barras: del color de identidad del tema (accent, que en casi todos es
-    // el azul) al magenta. Conserva el gesto del mockup — el primer color
-    // aguanta un tercio y solo entonces vira — con dos colores en vez de cinco.
+    // Bars run from the theme's identity color (accent, blue in almost every
+    // theme) to magenta. Two colors keep the mockup's gesture: the first holds
+    // for a third of the run before it turns.
     readonly property string gradA: _tc("accent", _tc("blue", "#6683D4"))
     readonly property string gradB: _tc("magenta", "#9A5CD5")
     readonly property var gradientStops: [
@@ -68,7 +60,7 @@ Item {
         { at: 1.00, color: gradB }
     ]
 
-    // "#RRGGBB" + alpha 0..1 -> "#AARRGGBB", la forma que entienden QML y Canvas.
+    // "#RRGGBB" + alpha 0..1 -> "#AARRGGBB", the form QML and Canvas accept.
     function _withAlpha(hex, alpha) {
         const a = Math.round(_clamp(alpha, 0, 1) * 255);
         return "#" + (a < 16 ? "0" : "") + a.toString(16) + String(hex).slice(1);
@@ -85,45 +77,41 @@ Item {
         return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
     }
 
-    // Estado "transcribing": la misma onda, condensada. Mientras el modelo
-    // procesa no hay audio, así que las barras las mueve un pulso sintético
-    // que recorre la burbuja de izquierda a derecha sin parar: el audio que
-    // grabaste "sigue pasando por dentro" mientras se convierte en texto.
-    // Comparte barras y degradado con la grabación, así el fundido entre
-    // los dos estados no cambia de idioma visual.
-    readonly property int  pulsePad:      23            // borde -> primera barra
-    readonly property real pulseMaxAmp:   12            // algo más calmo que grabando
-    readonly property real pulseSpeed:     1.15         // recorridos por segundo (~1.5 s)
-    readonly property real pulseFront:     0.08         // sigma del frente (nítido)
-    readonly property real pulseTail:      0.20         // sigma de la cola (larga)
-    readonly property real pulseBreath:    0.06         // latido de fondo, nunca plana
+    // "transcribing" state: the same wave, condensed. There is no audio while
+    // the model works, so a synthetic pulse sweeps the bubble left to right, as
+    // if the audio you recorded still flows through it while it turns into text.
+    // It shares bars and gradient with recording, so the crossfade between the
+    // two states never switches visual language.
+    readonly property int  pulsePad:      23            // edge -> first bar
+    readonly property real pulseMaxAmp:   12            // a touch calmer than recording
+    readonly property real pulseSpeed:     1.15         // sweeps per second (~1.5 s)
+    readonly property real pulseFront:     0.08         // leading-edge sigma (sharp)
+    readonly property real pulseTail:      0.20         // trailing-edge sigma (long)
+    readonly property real pulseBreath:    0.06         // background beat, never flat
 
     readonly property int  dotDiameter:  16
-    readonly property int  padLeft:      20             // borde -> punto
-    readonly property int  gapAfterDot:  18             // punto -> barras
+    readonly property int  padLeft:      20             // edge -> dot
+    readonly property int  gapAfterDot:  18             // dot -> bars
     readonly property int  padRight:     16
 
     readonly property real barWidth:      3
-    readonly property real barPitch:      5             // centro a centro
-    readonly property real barMinHeight:  2.5           // silencio = puntitos
-    readonly property real barMaxAmp:     14            // pico, desde el centro
+    readonly property real barPitch:      5             // center to center
+    readonly property real barMinHeight:  2.5           // silence = tiny dots
+    readonly property real barMaxAmp:     14            // peak, from the center
 
-    // Suavizado de la señal antes de dibujarla. El peak crudo del daemon
-    // salta muy rápido (100 Hz) y la traza se ve nerviosa; con ataque rápido
-    // y caída lenta las barras suben con energía al hablar y se relajan con
-    // gracia al callar, en vez de cortar en seco.
-    readonly property real attackPerFrame:  0.55        // subida (0..1 por frame)
-    readonly property real releasePerFrame: 0.07        // bajada, más lenta
+    // Smooth the signal before drawing. The daemon's raw peak jumps fast
+    // (100 Hz) and looks nervous; a fast attack and slow release let the bars
+    // rise with energy and settle gently instead of snapping.
+    readonly property real attackPerFrame:  0.55        // rise (0..1 per frame)
+    readonly property real releasePerFrame: 0.07        // fall, slower
 
-    // Ganancia visual: los picos de voz en mic rondan 0.1-0.3 de escala
-    // completa, así que sin ganancia la traza sería una línea plana.
+    // Visual gain: mic voice peaks sit around 0.1-0.3 of full scale, so with no
+    // gain the trace would be a flat line.
     readonly property real gain: _cfgNum("waveform_gain", 10.0)
 
-    // ---------------------------------------------------------------
-    // Posición: la manda la config, igual que en el surface integrado.
-    // Ojo: en los anclajes centrados la vertical la fija `top_margin`
-    // (fracción de la altura del monitor), NO la palabra top/bottom.
-    // ---------------------------------------------------------------
+    // Position comes from the config, like the built-in surface. For the
+    // centered anchors the vertical is set by `top_margin` (a fraction of
+    // monitor height), not the top/bottom word.
     function _cfg() { return theme && theme.config ? theme.config : null; }
 
     function _cfgNum(key, fallback) {
@@ -154,56 +142,47 @@ Item {
                Math.min(root.height - pillHeight - marginPx, root.height * topMargin));
     }
 
-    // ---------------------------------------------------------------
-    // Señal de audio: historial de picos, el más reciente a la derecha.
-    // ---------------------------------------------------------------
+    // Audio signal: a history of peaks, most recent on the right.
     readonly property int barCount:
         Math.max(1, Math.floor((pillWidth - padLeft - dotDiameter - gapAfterDot - padRight) / barPitch))
 
-    property var levels: []          // nivel suavizado por barra, 0..1
+    property var levels: []          // smoothed level per bar, 0..1
     property real _lastTick: Date.now()
-    property real _level: 0.0         // nivel con ataque/caída, lo que se empuja
+    property real _level: 0.0         // level with attack/release, the pushed value
 
-    // Progreso del cruce barras<->puntos (0 = grabando, 1 = transcribiendo).
-    // Se anima para que soltar la tecla no corte en seco entre una vista y
-    // la otra, sino que una se funda en la otra.
+    // Crossfade progress bars<->dots (0 = recording, 1 = transcribing). Animated
+    // so releasing the key fades one view into the other.
     property real _transProgress: 0.0
 
-    // Modo demo (VOXTYPE_PILL_DEMO=1): sintetiza una envolvente tipo voz
-    // para poder revisar el diseño con amplitud real sin usar el micrófono.
-    // Solo afecta al dibujo; no toca la captura de audio.
+    // Demo mode (VOXTYPE_PILL_DEMO=1): synthesizes a voice-like envelope so the
+    // design can be reviewed with real amplitude without a mic. Drawing only; it
+    // never touches audio capture.
     readonly property bool demo: Quickshell.env("VOXTYPE_PILL_DEMO") === "1"
     property real _demoPhase: 0
 
-    // Fase de animación, avanza siempre que el widget está visible.
+    // Animation phase, advances whenever the widget is visible.
     property real _phase: 0
 
-    // Forzador de estado para capturas (VOXTYPE_PILL_STATE=transcribing).
-    // Solo afecta al dibujo: el estado real del daemon no se toca.
+    // State override for captures (VOXTYPE_PILL_STATE=transcribing). Drawing
+    // only; the real daemon state is untouched.
     readonly property string stateOverride: Quickshell.env("VOXTYPE_PILL_STATE") || ""
     readonly property string drawState: stateOverride.length > 0 ? stateOverride : daemonState
 
     readonly property bool transcribing: drawState === "transcribing"
 
-    // Barras que caben en la burbuja encogida, centradas.
     readonly property int pulseBarCount:
         Math.max(3, Math.floor((pillWidthMin - 2 * pulsePad) / barPitch))
 
-    // Fase propia del pulso: arranca en cero al entrar en transcripción para
-    // que el primer recorrido ENTRE por la izquierda justo cuando la píldora
-    // colapsa — la energía de la grabación parece meterse en la burbuja.
+    // The pulse resets its phase to zero when transcription begins, so the first
+    // sweep enters from the left exactly as the pill collapses. The recording
+    // energy appears to pour into the bubble.
     property real _pulsePhase: 0.0
     onTranscribingChanged: if (transcribing) _pulsePhase = 0.0
 
-    // Nivel 0..1 de la barra en posición t (0 = izq, 1 = der) para el pulso
-    // viajero. Frente nítido y cola larga: se lee como energía que fluye, no
-    // como una bola que rebota. Un latido leve de fondo evita que la burbuja
-    // quede plana entre un recorrido y el siguiente.
-    // Un solo pulso dejaba la burbuja plana entre recorrido y recorrido, y
-    // al dar la vuelta cortaba la cola en seco (todavía medía ~22 % en el
-    // borde derecho cuando reaparecía por la izquierda). El recorrido va de
-    // -0.25 a 1.65 para que frente y cola salgan del todo (3 sigmas), y un
-    // segundo pulso a media distancia y menor altura mantiene el flujo.
+    // Level 0..1 of the bar at position t (0 left, 1 right) for the traveling
+    // pulse. Sharp leading edge, long tail, so it reads as flowing energy, not a
+    // bouncing ball. A second, dimmer pulse at half distance and a faint
+    // background beat keep the bubble from going flat between sweeps.
     function _pulseAt(t, pos) {
         const d = t - pos;
         const sigma = d > 0 ? pulseFront : pulseTail;
@@ -222,8 +201,8 @@ Item {
 
     function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    // Suavizado temporal asimétrico: sube rápido, baja lento. Da inercia
-    // de vúmetro en vez de parpadeo muestra a muestra.
+    // Asymmetric temporal smoothing: rises fast, falls slow. VU-meter inertia
+    // instead of sample-to-sample flicker.
     function _approach(current, target, stiffness, dt) {
         return current + (target - current) * (1 - Math.exp(-Math.max(0.01, stiffness) * dt));
     }
@@ -244,19 +223,16 @@ Item {
             _level = 0.0;
             _transProgress = 0.0;
         } else if (daemonState === "recording" || daemonState === "streaming") {
-            // El widget solo se ve al grabar: releer el tema en cada aparición
-            // garantiza colores frescos sin polling. Hace falta porque
-            // watchChanges no ve el cambio de tema (ver FileView), y un
-            // reload() a secas tampoco basta: omarchy-theme-set hace rm+mv
-            // sobre current/theme, así que el FileView sigue apuntando al
-            // inode viejo borrado. El path-flip lo obliga a reabrir la ruta.
+            // The widget only shows while recording, so re-reading the theme on
+            // each appearance keeps colors fresh without polling. watchChanges
+            // misses the theme switch (see the theme reader below).
             _reloadTheme();
         }
     }
 
-    // Cada frame del daemon desplaza el historial una barra a la izquierda.
-    // El valor que entra no es el peak crudo sino uno con ataque/caída, así
-    // que el borde derecho de la traza sube y baja con suavidad.
+    // Each daemon frame shifts the history one bar left. The value pushed is the
+    // attack/release-smoothed level, not the raw peak, so the right edge rises
+    // and falls smoothly.
     Connections {
         target: root.audio
         enabled: root.audio !== null
@@ -274,8 +250,8 @@ Item {
         }
     }
 
-    // Envolvente sintética: sílabas sobre una portadora lenta, más fuerte
-    // hacia la derecha, como la traza del mockup.
+    // Synthetic envelope: syllables over a slow carrier, louder toward the
+    // right, like the mockup's trace.
     function _stepDemo(dt) {
         _demoPhase += dt * 2.2;
         const next = [];
@@ -307,23 +283,14 @@ Item {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Tema de Omarchy: colors.toml del tema activo. El estado moderno vive
-    // en ~/.local/state; el legado en ~/.config.
-    //
-    // OJO: `watchChanges` NO detecta el cambio de tema. omarchy-theme-set
-    // monta el tema nuevo en una carpeta aparte y la renombra encima de
-    // current/theme, así que el inode vigilado queda huérfano y nunca llega
-    // aviso. Por eso el tema se recarga cada vez que el widget aparece
-    // (onDaemonStateChanged) y, de refuerzo, al cambiar theme.name.
-    // ---------------------------------------------------------------
+    // Omarchy theme: the active theme's colors.toml. The modern state lives in
+    // ~/.local/state; the legacy path in ~/.config.
     readonly property string _home: Quickshell.env("HOME") || ""
-    // VOXTYPE_PILL_THEME_FILE fuerza la ruta del colors.toml (para pruebas
-    // aisladas); si está vacía, se usan las rutas reales de Omarchy.
+    // VOXTYPE_PILL_THEME_FILE forces the colors.toml path for isolated tests;
+    // empty means use Omarchy's real paths.
     readonly property string _themeOverride: Quickshell.env("VOXTYPE_PILL_THEME_FILE") || ""
 
-    // Parser mínimo: solo líneas `clave = "#rrggbb"`, que es todo lo que
-    // trae el archivo. No hace falta un parser TOML para esto.
+    // Minimal parser: only `key = "#rrggbb"` lines, which is all the file has.
     function _parseTheme(text) {
         const out = {};
         const re = /^\s*([A-Za-z_]+)\s*=\s*"(#[0-9A-Fa-f]{6})"/;
@@ -332,17 +299,17 @@ Item {
             const m = re.exec(lines[i]);
             if (m) out[m[1]] = m[2].toUpperCase();
         }
-        if (Object.keys(out).length > 0) {   // no pisar con vacío si cat falla
+        if (Object.keys(out).length > 0) {   // don't overwrite with empty if cat fails
             themeColors = out;
             canvas.requestPaint();
         }
     }
 
-    // Relee el tema con `cat`. FileView no vale aquí: omarchy-theme-set hace
-    // rm+mv sobre current/theme, así que queda colgado del inode viejo y ni
-    // watchChanges ni reload()/path-flip releen fiable. Un `cat` nuevo lee
-    // siempre el contenido actual de la ruta, sin importar el inode. Prueba
-    // .local/state y cae a .config (o a la ruta forzada en pruebas).
+    // Re-read the theme with `cat`. FileView does not work here: omarchy-theme-set
+    // does rm+mv on current/theme, so the view stays bound to the old, deleted
+    // inode, and neither watchChanges nor reload()/path-flip re-read reliably. A
+    // fresh `cat` always reads the current contents of the path, whatever the
+    // inode. Tries .local/state, falls back to .config (or the forced test path).
     function _reloadTheme() {
         themeReader.running = false;
         themeReader.running = true;
@@ -362,10 +329,10 @@ Item {
         }
     }
 
-    // Refuerzo: theme.name es pequeño y theme-set lo reescribe en cada cambio.
-    // Si el compositor propaga el evento, el widget se recolorea sin esperar a
-    // la siguiente grabación. El watcher puede no dispararse tras el rm+mv,
-    // por eso el disparo fiable es onDaemonStateChanged (cada aparición).
+    // Reinforcement: theme.name is small and theme-set rewrites it on every
+    // change. If the compositor propagates the event, the widget recolors
+    // without waiting for the next recording. The watcher may not fire after
+    // rm+mv, so onDaemonStateChanged (every appearance) is the reliable path.
     FileView {
         id: themeNameFile
         path: root._home + "/.local/state/omarchy/current/theme.name"
@@ -374,18 +341,15 @@ Item {
         onFileChanged: root._reloadTheme()
     }
 
-    // ---------------------------------------------------------------
-    // Dibujo
-    // ---------------------------------------------------------------
     Canvas {
         id: canvas
-        x: root._pillX() - 24          // margen para el glow del borde
+        x: root._pillX() - 24          // room for the border glow
         y: root._pillY() - 24
         width:  root.pillWidth  + 48
         height: root.pillHeight + 48
         antialiasing: true
 
-        readonly property real ox: 24   // origen de la píldora dentro del canvas
+        readonly property real ox: 24   // pill origin within the canvas
         readonly property real oy: 24
 
         onPaint: {
@@ -394,9 +358,9 @@ Item {
             ctx.save();
             ctx.translate(ox, oy);
 
-            // La píldora encoge hacia el centro del canvas; su contenido se
-            // recorta al borde, así las barras "entran" tras el borde a
-            // medida que se estrecha, en vez de quedar flotando fuera.
+            // The pill shrinks toward the canvas center; its content is clipped
+            // to the edge, so the bars slip behind the border as it narrows
+            // instead of floating outside.
             const w    = root.curPillWidth;
             const left = (root.pillWidth - w) / 2;
 
@@ -465,9 +429,9 @@ Item {
             ctx.globalAlpha = 1.0;
         }
 
-        // Onda mini de la transcripción: las mismas barras y el mismo
-        // degradado que grabando, centradas en la burbuja, movidas por el
-        // pulso viajero. `alpha` la funde con la vista de grabación.
+        // Transcription mini wave: the same bars and gradient as recording,
+        // centered in the bubble, driven by the traveling pulse. `alpha` fades it
+        // in with the recording view.
         function _paintPulse(ctx, left, w, alpha) {
             const n    = root.pulseBarCount;
             const span = (n - 1) * root.barPitch + root.barWidth;
@@ -499,8 +463,8 @@ Item {
             const n  = root.barCount;
             const lv = root.levels;
 
-            // Degradado horizontal a lo largo de la traza: el built-in
-            // `bars` solo sabe hacerlo vertical, de ahí este QML.
+            // Horizontal gradient along the trace. The built-in `bars` only does
+            // vertical, which is why this is custom QML.
             const grad = ctx.createLinearGradient(x0, 0, x0 + n * root.barPitch, 0);
             for (let s = 0; s < root.gradientStops.length; s++) {
                 grad.addColorStop(root.gradientStops[s].at, root.gradientStops[s].color);
