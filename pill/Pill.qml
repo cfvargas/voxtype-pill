@@ -16,8 +16,6 @@ Item {
     property string daemonState: "idle"
     property var audio: null
     property var theme: null      // VT.StyleLoader
-    property var recipe: null
-    property string assetRoot: ""
 
     // Design. Measurements taken from the mockup (a 447x60 pill on 1280).
     readonly property int  pillWidth:      253         // recording width (two-thirds of 380)
@@ -343,14 +341,16 @@ Item {
 
     Canvas {
         id: canvas
-        x: root._pillX() - 24          // room for the border glow
-        y: root._pillY() - 24
-        width:  root.pillWidth  + 48
-        height: root.pillHeight + 48
+        readonly property int pad: 24   // glow room around the pill, per side
+
+        x: root._pillX() - pad
+        y: root._pillY() - pad
+        width:  root.pillWidth  + 2 * pad
+        height: root.pillHeight + 2 * pad
         antialiasing: true
 
-        readonly property real ox: 24   // pill origin within the canvas
-        readonly property real oy: 24
+        readonly property real ox: pad   // pill origin within the canvas
+        readonly property real oy: pad
 
         onPaint: {
             const ctx = getContext("2d");
@@ -400,6 +400,22 @@ Item {
             ctx.closePath();
         }
 
+        // Horizontal gradient across [x0, x1], set as the current fill. The
+        // built-in `bars` layer only does vertical, which is why this is custom.
+        function _setGradient(ctx, x0, x1) {
+            const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+            for (let s = 0; s < root.gradientStops.length; s++) {
+                grad.addColorStop(root.gradientStops[s].at, root.gradientStops[s].color);
+            }
+            ctx.fillStyle = grad;
+        }
+
+        // A bar of half-height `amp` mirrored about cy, with rounded caps.
+        function _bar(ctx, x, cy, amp) {
+            _roundedRect(ctx, x, cy - amp, root.barWidth, amp * 2, root.barWidth / 2);
+            ctx.fill();
+        }
+
         function _pillPath(ctx, left, w) {
             _roundedRect(ctx, left, 0, w, root.pillHeight, root.pillRadius);
         }
@@ -438,11 +454,7 @@ Item {
             const x0   = left + (w - span) / 2;
             const cy   = root.pillHeight / 2;
 
-            const grad = ctx.createLinearGradient(x0, 0, x0 + span, 0);
-            for (let s = 0; s < root.gradientStops.length; s++) {
-                grad.addColorStop(root.gradientStops[s].at, root.gradientStops[s].color);
-            }
-            ctx.fillStyle = grad;
+            _setGradient(ctx, x0, x0 + span);
             ctx.globalAlpha = alpha;
 
             for (let i = 0; i < n; i++) {
@@ -450,8 +462,7 @@ Item {
                 const level = root._pulseLevel(t);
                 const amp   = root.barMinHeight / 2 + level * root.pulseMaxAmp;
                 const x     = x0 + i * root.barPitch;
-                _roundedRect(ctx, x, cy - amp, root.barWidth, amp * 2, root.barWidth / 2);
-                ctx.fill();
+                _bar(ctx, x, cy, amp);
             }
             ctx.globalAlpha = 1.0;
         }
@@ -463,21 +474,13 @@ Item {
             const n  = root.barCount;
             const lv = root.levels;
 
-            // Horizontal gradient along the trace. The built-in `bars` only does
-            // vertical, which is why this is custom QML.
-            const grad = ctx.createLinearGradient(x0, 0, x0 + n * root.barPitch, 0);
-            for (let s = 0; s < root.gradientStops.length; s++) {
-                grad.addColorStop(root.gradientStops[s].at, root.gradientStops[s].color);
-            }
-            ctx.fillStyle = grad;
+            _setGradient(ctx, x0, x0 + n * root.barPitch);
 
             for (let i = 0; i < n; i++) {
                 const level = lv.length === n ? lv[i] : 0.0;
                 const amp = root.barMinHeight / 2 + level * root.barMaxAmp;
                 const x = x0 + i * root.barPitch;
-                const h = amp * 2;
-                _roundedRect(ctx, x, cy - amp, root.barWidth, h, root.barWidth / 2);
-                ctx.fill();
+                _bar(ctx, x, cy, amp);
             }
             ctx.globalAlpha = 1.0;
         }
