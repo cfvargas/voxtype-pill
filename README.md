@@ -37,9 +37,11 @@ voxtype, no daemon internals.
 
 - **voxtype**, installed and running. See https://voxtype.io (on Arch and
   Omarchy: the `voxtype-bin` AUR package).
-- **quickshell** (the `qs` binary). The pill runs on voxtype's quickshell
-  frontend. The default `gtk4` frontend cannot render custom styles, so the
-  installer switches you to quickshell.
+- **quickshell** (the `qs` binary), installed and on your `PATH`. This is the
+  hard requirement. The pill runs on voxtype's quickshell frontend, and the
+  default `gtk4` frontend cannot render custom styles at all. Without `qs` the
+  pill never appears, and the installer warns you if it is missing. On Arch and
+  Omarchy: the `quickshell` package.
 - **Omarchy** is optional. It is what makes the colors follow your theme. On
   any other setup the pill uses its built-in palette.
 
@@ -99,6 +101,24 @@ Colors reload on the next dictation after a theme change, with no restart. The
 mechanism and why it needs care are documented in
 [`docs/how-it-works.md`](docs/how-it-works.md).
 
+## Troubleshooting
+
+**The pill does not appear, or you still see the old flat HUD.** Almost always
+this is quickshell missing or the frontend not switched. Check both:
+
+```bash
+command -v qs || echo "quickshell missing: install it"
+voxtype config get | grep -E 'osd\.(frontend|style)'
+```
+
+`osd.frontend` must be `quickshell` and `osd.style` must be `pill`. If they are
+and it still does not show, restart the daemon with
+`systemctl --user restart voxtype.service` and dictate again.
+
+**The dot is not red, the bars are not blue.** The colors follow your Omarchy
+theme, so a monochrome theme (like vantablack) renders a gray pill. That is
+correct behavior. Switch to a colored theme and dictate again to see it recolor.
+
 ## Uninstall
 
 ```bash
@@ -107,6 +127,46 @@ mechanism and why it needs care are documented in
 
 It removes the style directory and restores the config backup taken at install
 time, then restarts the daemon.
+
+## Developing on the style
+
+The installer **copies** the style into `~/.config/voxtype/osd/pill/`, it does
+not symlink it. That keeps a cloned repo safe to delete after install, but it
+means edits to `pill/Pill.qml` are not live. After editing, re-run
+`./install.sh` to push the change, or point voxtype straight at the repo with
+`voxtype config set osd.style /absolute/path/to/repo/pill`.
+
+**Preview without a microphone (demo mode).** Set `VOXTYPE_PILL_DEMO=1` on the
+OSD process and the widget synthesizes a voice-like envelope, so you can review
+the animation with real amplitude and no mic. It needs quickshell and the style
+available. Run the quickshell OSD standalone, then start a recording so the
+surface becomes visible. The synthetic envelope drives the bars instead of the
+mic:
+
+```bash
+# Optional: hide the daemon's own OSD first, for a clean preview.
+voxtype config set osd.enabled false && systemctl --user restart voxtype.service
+
+VOXTYPE_PILL_DEMO=1 /usr/lib/voxtype/voxtype-osd-quickshell \
+  --style ./pill --config ~/.config/voxtype/config.toml --no-daemonize &
+
+voxtype record start     # makes the surface appear; the bars animate
+# ...look at it, then:
+voxtype record cancel    # discards, nothing is transcribed
+kill %1                  # stop the preview
+
+# Restore the daemon's OSD when done.
+voxtype config set osd.enabled true && systemctl --user restart voxtype.service
+```
+
+Three environment variables help while iterating, all drawing-only and gated so
+they never affect real dictation:
+
+| Variable | Effect |
+|---|---|
+| `VOXTYPE_PILL_DEMO=1` | Synthesize a voice envelope instead of reading the mic. |
+| `VOXTYPE_PILL_STATE=transcribing` | Force a draw state, to capture the transcribing animation on demand. |
+| `VOXTYPE_PILL_THEME_FILE=/path/to/colors.toml` | Read colors from a specific theme file, for testing theming in isolation. |
 
 ## How voxtype's OSD works
 
