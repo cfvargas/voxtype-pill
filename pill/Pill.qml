@@ -103,14 +103,13 @@ Item {
     readonly property real attackPerFrame:  0.55        // rise (0..1 per frame)
     readonly property real releasePerFrame: 0.07        // fall, slower
 
-    // Visual gain applied to each peak before drawing. It is a fixed constant,
-    // not a config key. voxtype does not pass osd.waveform_gain to custom QML
-    // styles (its style JSON omits it), so `voxtype config set` cannot change
-    // it. Tune it by editing this value and re-running install.sh. At 3.0,
-    // ambient mic noise (~0.05 peak) stays as faint dots and normal speech
-    // reaches full height. Lower it if the bars saturate, raise it if they
-    // barely move.
-    readonly property real gain: 3.0
+    // Visual gain applied to each peak before drawing. Sourced from
+    // osd.waveform_gain in config.toml (see the config reader below), so
+    // `voxtype config set osd.waveform_gain <n>` and the config TUI tune it,
+    // applied on the next dictation with no restart. voxtype does not forward
+    // this key in the style JSON it hands custom QML, so the widget reads
+    // config.toml directly. Stays at the default until the file is read.
+    property real gain: 3.0
 
     // Position comes from the config, like the built-in surface. For the
     // centered anchors the vertical is set by `top_margin` (a fraction of
@@ -210,7 +209,7 @@ Item {
         return current + (target - current) * (1 - Math.exp(-Math.max(0.01, stiffness) * dt));
     }
 
-    Component.onCompleted: { _resetLevels(); _reloadTheme(); }
+    Component.onCompleted: { _resetLevels(); _reloadTheme(); _reloadConfig(); }
 
     function _resetLevels() {
         const next = [];
@@ -226,10 +225,11 @@ Item {
             _level = 0.0;
             _transProgress = 0.0;
         } else if (daemonState === "recording" || daemonState === "streaming") {
-            // The widget only shows while recording, so re-reading the theme on
-            // each appearance keeps colors fresh without polling. watchChanges
-            // misses the theme switch (see the theme reader below).
+            // The widget only shows while recording, so re-reading the theme and
+            // the config on each appearance keeps colors and gain fresh without
+            // polling. watchChanges misses the theme switch (see the readers).
             _reloadTheme();
+            _reloadConfig();
         }
     }
 
@@ -342,6 +342,36 @@ Item {
         watchChanges: true
         printErrors: false
         onFileChanged: root._reloadTheme()
+    }
+
+    // Waveform gain, read from osd.waveform_gain in config.toml. voxtype omits
+    // this key from the style JSON it passes to custom QML, so the widget reads
+    // the config file directly, like it reads the theme. Re-read on each
+    // appearance, so `voxtype config set osd.waveform_gain <n>` (or the config
+    // TUI) applies on the next dictation with no restart. Absent key keeps the
+    // default.
+    readonly property string _configPath:
+        (Quickshell.env("XDG_CONFIG_HOME") || (_home + "/.config")) + "/voxtype/config.toml"
+
+    function _reloadConfig() {
+        configReader.running = false;
+        configReader.running = true;
+    }
+
+    Process {
+        id: configReader
+        running: false
+        command: ["sh", "-c", "cat '" + root._configPath + "' 2>/dev/null"]
+        stdout: StdioCollector {
+            id: configOut
+            onStreamFinished: root._parseConfig(configOut.text)
+        }
+    }
+
+    // Only the osd.waveform_gain line is needed, and it is unique in the file.
+    function _parseConfig(text) {
+        const m = /(^|\n)[ \t]*waveform_gain[ \t]*=[ \t]*([0-9]+(?:\.[0-9]+)?)/.exec(String(text || ""));
+        if (m) gain = Number(m[2]);
     }
 
     Canvas {

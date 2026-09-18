@@ -79,19 +79,23 @@ applies these:
 | `osd.palette` | `omarchy` | Lets colors follow the Omarchy theme. |
 | `osd.position` | `bottom-center` | Horizontal anchor. |
 | `osd.top_margin` | `0.90` | Vertical position, as a fraction of screen height. Higher is lower. |
+| `osd.waveform_gain` | `3.0` | How strongly the bars react to your voice. |
 
-**Tuning the waveform sensitivity.** The bars' sensitivity is a `gain` constant
-in `pill/Pill.qml` (default `3.0`), not a config key. voxtype does not pass
-`osd.waveform_gain` to custom QML styles, so `voxtype config set` has no effect
-on it. To change it, edit the constant and re-run the installer:
+**Tuning the waveform sensitivity.** Set `osd.waveform_gain` (default `3.0`). It
+takes effect on your next dictation, with no restart:
 
 ```bash
-# in pill/Pill.qml:  readonly property real gain: 3.0
-./install.sh
+voxtype config set osd.waveform_gain 5
 ```
 
-Lower the gain if the bars saturate to full height on normal speech, raise it if
-they barely move.
+Lower it if the bars saturate to full height on normal speech, raise it if they
+barely move. You can also change it in the interactive TUI (`voxtype configure`).
+
+A weak or distant microphone may need a much higher value (10 or more). This
+works because the pill reads `waveform_gain` from your config file directly.
+voxtype does not forward that key to custom styles in the style JSON it passes
+them, so a custom style that wants it has to read the config itself, which this
+one does.
 
 ## How the theming works
 

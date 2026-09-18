@@ -83,10 +83,14 @@ you declare them as properties:
 the `[osd]` keys: `style`, `palette`, `layout`, `position`, `margin_px`,
 `top_margin`, the resolved `colors`, `frame`, and `visual`. It does **not**
 include `waveform_gain`, `waveform_window_secs`, `peak_decay_db_per_sec`, or
-`opacity`. Those apply only to voxtype's built-in renderer. A custom style owns
-waveform behavior itself, so setting `osd.waveform_gain` with `voxtype config
-set` has no effect on custom QML. This pill keeps its gain as a constant in
-`Pill.qml` for that reason.
+`opacity`. Those apply to voxtype's built-in renderer.
+
+A custom style that wants one of those keys has to read the config file itself.
+This pill does exactly that for `waveform_gain`: it `cat`s
+`~/.config/voxtype/config.toml`, parses the `osd.waveform_gain` line, and
+re-reads it on each appearance, the same pattern it uses for the theme. That is
+why `voxtype config set osd.waveform_gain <n>` tunes the pill and takes effect on
+the next dictation, even though the key never arrives in the style JSON.
 
 ## Why this design reads the theme file directly
 
