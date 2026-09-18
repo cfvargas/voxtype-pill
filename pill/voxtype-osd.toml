@@ -1,0 +1,26 @@
+# voxtype OSD style package.
+# The quickshell OSD launcher looks for this file to recognize the directory
+# as a style package. `qml_entry` is the QML that OsdSurface loads instead of
+# its built-in card.
+#
+# Try it without installing:
+#   voxtype-osd-quickshell --style /path/to/pill --config <recipe>
+
+version       = "1.0.0"
+description   = "Pill OSD with a red recording dot and a blue->magenta waveform, colors following the active Omarchy theme"
+compatibility = "1.0"
+qml_entry     = "Pill.qml"
+
+palette = "omarchy"
+layout  = "custom"
+
+# The QML draws its own frame, so the built-in one is turned off.
+[frame]
+background = "background"
+border     = "background"
+glow       = false
+halo       = false
+
+# No layers: the design does not use the recipe renderer.
+[visual]
+layers = []

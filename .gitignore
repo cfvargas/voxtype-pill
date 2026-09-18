@@ -1,0 +1,4 @@
+# Nothing runtime-generated lives in the repo. Keep it that way.
+*.bak
+*.tmp
+*.log
